@@ -33,7 +33,8 @@ class NearestNeighborClassifier:
         Returns:
             tuple of x and y both torch.Tensor's.
         """
-        raise NotImplementedError
+
+        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
     @classmethod
     def compute_data_statistics(cls, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -48,8 +49,9 @@ class NearestNeighborClassifier:
             tuple of mean and standard deviation of the data.
             Both should have a shape [1, D]
         """
-        raise NotImplementedError
 
+        return x.mean(dim=0, keepdim=True), x.std(dim=0, keepdim=True)
+    
     def input_normalization(self, x: torch.Tensor) -> torch.Tensor:
         """
         Normalize the input x using the mean and std computed from the data in __init__
@@ -72,9 +74,11 @@ class NearestNeighborClassifier:
         Returns:
             tuple of the nearest neighbor data point [D] and its label [1]
         """
-        raise NotImplementedError
+
         x = self.input_normalization(x)
-        idx = ...  # Implement me:
+        distances = torch.norm(self.data_normalized - x, dim=1)
+        idx = torch.argmin(distances)
+
         return self.data[idx], self.label[idx]
 
     def get_k_nearest_neighbor(self, x: torch.Tensor, k: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -90,10 +94,13 @@ class NearestNeighborClassifier:
             data points will be size (k, D)
             labels will be size (k,)
         """
-        raise NotImplementedError
+        
         x = self.input_normalization(x)
-        idx = ...  # Implement me:
+        distances = torch.norm(self.data_normalized - x, dim=1)
+        idx = torch.topk(distances, k, largest=False).indices
+
         return self.data[idx], self.label[idx]
+
 
     def knn_regression(self, x: torch.Tensor, k: int) -> torch.Tensor:
         """
@@ -107,4 +114,8 @@ class NearestNeighborClassifier:
         Returns:
             average value of labels from the k neighbors. Tensor of shape [1]
         """
-        raise NotImplementedError
+        
+        _, labels = self.get_k_nearest_neighbor(x, k)
+        return labels.mean()
+
+        
