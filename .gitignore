@@ -32,6 +32,10 @@ venv/
 
 # Grader / build artifacts (if any)
 *.log
+*.zip
+
+# Dataset
+**/classification_data/
 
 # Claude settings
 .claude/
