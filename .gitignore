@@ -37,5 +37,9 @@ venv/
 # Dataset
 **/classification_data/
 
+# Nested gitignore
+**/.gitignore
+!.gitignore
+
 # Claude settings
 .claude/

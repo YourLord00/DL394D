@@ -26,8 +26,22 @@ class Classifier(nn.Module):
         self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN))
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD))
 
-        # TODO: implement
-        pass
+        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.skip1 = nn.Conv2d(in_channels, 32, kernel_size=1, stride=2)
+
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.skip2 = nn.Conv2d(32, 64, kernel_size=1, stride=2)
+
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.skip3 = nn.Conv2d(64, 128, kernel_size=1, stride=2)
+
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.dropout = nn.Dropout(0.2)
+        self.fc = nn.Linear(128, num_classes)
+        self.relu = nn.ReLU()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -39,11 +53,15 @@ class Classifier(nn.Module):
         """
         # optional: normalizes the input
         z = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
+        z = self.relu(self.bn1(self.conv1(z)) + self.skip1(z))
+        z = self.relu(self.bn2(self.conv2(z)) + self.skip2(z))
+        z = self.relu(self.bn3(self.conv3(z)) + self.skip3(z))
 
-        # TODO: replace with actual forward pass
-        logits = torch.randn(x.size(0), 6)
+        z = self.pool(z).squeeze(-1).squeeze(-1)
+        z = self.dropout(z)
+        z = self.fc(z)
 
-        return logits
+        return z
 
     def predict(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -79,7 +97,58 @@ class Detector(torch.nn.Module):
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD))
 
         # TODO: implement
-        pass
+
+        # encoder
+        self.downsampling1 = nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.relu1 = nn.ReLU()
+        self.conv1_extra = nn.Conv2d(32, 32, kernel_size=3, padding=1)
+        self.bn1_extra = nn.BatchNorm2d(32)
+        self.relu1_extra = nn.ReLU()
+
+        self.downsampling2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.relu2 = nn.ReLU()
+        self.conv2_extra = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        self.bn2_extra = nn.BatchNorm2d(64)
+        self.relu2_extra = nn.ReLU()
+
+        self.downsampling3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.relu3 = nn.ReLU()
+        self.conv3_extra = nn.Conv2d(128, 128, kernel_size=3, padding=1)
+        self.bn3_extra = nn.BatchNorm2d(128)
+        self.relu3_extra = nn.ReLU()
+
+        self.downsampling4 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
+        self.bn4 = nn.BatchNorm2d(256)
+        self.relu4 = nn.ReLU()
+        self.conv4_extra = nn.Conv2d(256, 256, kernel_size=3, padding=1)
+        self.bn4_extra = nn.BatchNorm2d(256)
+        self.relu4_extra = nn.ReLU()
+        self.dropout = nn.Dropout2d(0.2)
+
+        # decoder
+        self.upsampling1 = nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.bn5 = nn.BatchNorm2d(128)
+        self.relu5 = nn.ReLU()
+
+        self.upsampling2 = nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.bn6 = nn.BatchNorm2d(64)
+        self.relu6 = nn.ReLU()
+
+        self.upsampling3 = nn.ConvTranspose2d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.bn7 = nn.BatchNorm2d(32)
+        self.relu7 = nn.ReLU()
+
+        self.upsampling4 = nn.ConvTranspose2d(32, 32, kernel_size=3, stride=2, padding=1, output_padding=1)
+        self.bn8 = nn.BatchNorm2d(32)
+        self.relu8 = nn.ReLU()
+
+        # output heads
+        self.seg_head = nn.Conv2d(32, num_classes, kernel_size=1)
+        self.depth_head = nn.Conv2d(32, 1, kernel_size=1)
+
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """
@@ -97,9 +166,41 @@ class Detector(torch.nn.Module):
         # optional: normalizes the input
         z = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
 
-        # TODO: replace with actual forward pass
-        logits = torch.randn(x.size(0), 3, x.size(2), x.size(3))
-        raw_depth = torch.rand(x.size(0), x.size(2), x.size(3))
+        # encoder
+        down1 = self.relu1(self.bn1(self.downsampling1(z)))
+        down1 = self.relu1_extra(self.bn1_extra(self.conv1_extra(down1)))
+        # (B, 32, 48, 64)
+
+        down2 = self.relu2(self.bn2(self.downsampling2(down1)))
+        down2 = self.relu2_extra(self.bn2_extra(self.conv2_extra(down2)))
+        # (B, 64, 24, 32)
+
+        down3 = self.relu3(self.bn3(self.downsampling3(down2)))
+        down3 = self.relu3_extra(self.bn3_extra(self.conv3_extra(down3)))
+        # (B, 128, 12, 16)
+
+        down4 = self.relu4(self.bn4(self.downsampling4(down3)))
+        down4 = self.dropout(self.relu4_extra(self.bn4_extra(self.conv4_extra(down4))))
+        # (B, 256, 6, 8)
+
+        # decoder & skip connections
+        up1 = self.relu5(self.bn5(self.upsampling1(down4)))
+        # (B, 128, 12, 16)
+        up1 = up1 + down3
+
+        up2 = self.relu6(self.bn6(self.upsampling2(up1)))
+        # (B, 64, 24, 32)
+        up2 = up2 + down2
+
+        up3 = self.relu7(self.bn7(self.upsampling3(up2)))
+        # (B, 32, 48, 64)
+        up3 = up3 + down1
+
+        up4 = self.relu8(self.bn8(self.upsampling4(up3)))
+        # (B, 32, 96, 128)
+
+        logits = self.seg_head(up4)
+        raw_depth = self.depth_head(up4).squeeze(1)
 
         return logits, raw_depth
 
