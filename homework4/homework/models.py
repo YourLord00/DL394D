@@ -24,6 +24,15 @@ class MLPPlanner(nn.Module):
         self.n_track = n_track
         self.n_waypoints = n_waypoints
 
+        self.fc1 = nn.Linear((2 * n_track) * 2, 512)
+        self.bn1 = nn.BatchNorm1d(512)
+        self.fc2 = nn.Linear(512, 512)
+        self.bn2 = nn.BatchNorm1d(512)
+        self.dropout = nn.Dropout(0.1)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, n_waypoints * 2)
+        self.relu = nn.ReLU()
+
     def forward(
         self,
         track_left: torch.Tensor,
@@ -43,7 +52,17 @@ class MLPPlanner(nn.Module):
         Returns:
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
-        raise NotImplementedError
+        x = torch.cat([track_left, track_right], dim=1)  # (B, 20, 2)
+        x = x.view(x.shape[0], -1)                         # (B, 40)
+
+        x = self.relu(self.bn1(self.fc1(x)))        # (B, 256)
+        x = x + self.relu(self.bn2(self.fc2(x)))    # (B, 256) + res
+        x = self.dropout(x)
+        x = self.relu(self.fc3(x))                  # (B, 128)
+        x = self.fc4(x)                              # (B, 6)
+        x = x.view(x.shape[0], self.n_waypoints, 2)
+
+        return x
 
 
 class TransformerPlanner(nn.Module):
@@ -58,7 +77,16 @@ class TransformerPlanner(nn.Module):
         self.n_track = n_track
         self.n_waypoints = n_waypoints
 
-        self.query_embed = nn.Embedding(n_waypoints, d_model)
+        self.query_embed = nn.Embedding(n_waypoints, d_model) # B, n_waypoints, d_model -> B, 3, 64
+        
+        self.input_proj = nn.Linear(2, d_model) # B, n_track, 2 -> B, n_track, d_model
+
+        self.decoder_layer = nn.TransformerDecoderLayer(d_model=d_model, nhead=4, batch_first=True)
+        self.decoder = nn.TransformerDecoder(self.decoder_layer, num_layers=3)
+
+        self.output_proj = nn.Linear(d_model, 2)
+
+
 
     def forward(
         self,
@@ -79,13 +107,26 @@ class TransformerPlanner(nn.Module):
         Returns:
             torch.Tensor: future waypoints with shape (b, n_waypoints, 2)
         """
-        raise NotImplementedError
+        
+        track = torch.cat([track_left, track_right], dim=1)  # (B, 20, 2)
+        k_v = self.input_proj(track) # (B, 20, d_model)
+
+        #query
+        b = track.shape[0]
+        q = self.query_embed.weight.unsqueeze(0).expand(b, -1, -1) # (B, 3, d_model)
+
+        #attention scores
+        output = self.decoder(q, k_v) # (B, 3, d_model)
+        waypoints = self.output_proj(output) # (B, 3, 2)
+
+        return waypoints
 
 
 class CNNPlanner(torch.nn.Module):
     def __init__(
         self,
         n_waypoints: int = 3,
+        in_channels: int = 3,
     ):
         super().__init__()
 
@@ -93,6 +134,27 @@ class CNNPlanner(torch.nn.Module):
 
         self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN), persistent=False)
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD), persistent=False)
+
+        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.skip1 = nn.Conv2d(in_channels, 32, kernel_size=1, stride=2)
+
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.skip2 = nn.Conv2d(32, 64, kernel_size=1, stride=2)
+
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.skip3 = nn.Conv2d(64, 128, kernel_size=1, stride=2)
+
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
+        self.bn4 = nn.BatchNorm2d(256)
+        self.skip4 = nn.Conv2d(128, 256, kernel_size=1, stride=2)
+
+        self.pool = nn.AdaptiveAvgPool2d(1)
+        self.dropout = nn.Dropout(0.2)
+        self.fc = nn.Linear(256, n_waypoints * 2)
+        self.relu = nn.ReLU()
 
     def forward(self, image: torch.Tensor, **kwargs) -> torch.Tensor:
         """
@@ -105,7 +167,17 @@ class CNNPlanner(torch.nn.Module):
         x = image
         x = (x - self.input_mean[None, :, None, None]) / self.input_std[None, :, None, None]
 
-        raise NotImplementedError
+        x = self.relu(self.bn1(self.conv1(x)) + self.skip1(x))
+        x = self.relu(self.bn2(self.conv2(x)) + self.skip2(x))
+        x = self.relu(self.bn3(self.conv3(x)) + self.skip3(x))
+        x = self.relu(self.bn4(self.conv4(x)) + self.skip4(x))
+
+        x = self.pool(x).squeeze(-1).squeeze(-1)
+        x = self.dropout(x)
+        x = self.fc(x)
+        x = x.view(-1, self.n_waypoints, 2)
+
+        return x
 
 
 MODEL_FACTORY = {

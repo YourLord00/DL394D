@@ -36,6 +36,10 @@ venv/
 
 # Dataset
 **/classification_data/
+**/drive_data/
+
+# Checkpoints
+**/*_checkpoints/
 
 # Nested gitignore
 **/.gitignore
