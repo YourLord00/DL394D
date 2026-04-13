@@ -135,25 +135,26 @@ class CNNPlanner(torch.nn.Module):
         self.register_buffer("input_mean", torch.as_tensor(INPUT_MEAN), persistent=False)
         self.register_buffer("input_std", torch.as_tensor(INPUT_STD), persistent=False)
 
-        self.conv1 = nn.Conv2d(in_channels, 32, kernel_size=3, stride=2, padding=1)
-        self.bn1 = nn.BatchNorm2d(32)
-        self.skip1 = nn.Conv2d(in_channels, 32, kernel_size=1, stride=2)
+        self.conv1 = nn.Conv2d(in_channels, 64, kernel_size=3, stride=2, padding=1)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.skip1 = nn.Conv2d(in_channels, 64, kernel_size=1, stride=2)
 
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.skip2 = nn.Conv2d(32, 64, kernel_size=1, stride=2)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.skip2 = nn.Conv2d(64, 128, kernel_size=1, stride=2)
 
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1)
-        self.bn3 = nn.BatchNorm2d(128)
-        self.skip3 = nn.Conv2d(64, 128, kernel_size=1, stride=2)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
+        self.bn3 = nn.BatchNorm2d(256)
+        self.skip3 = nn.Conv2d(128, 256, kernel_size=1, stride=2)
 
-        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, stride=2, padding=1)
-        self.bn4 = nn.BatchNorm2d(256)
-        self.skip4 = nn.Conv2d(128, 256, kernel_size=1, stride=2)
+        self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride=2, padding=1)
+        self.bn4 = nn.BatchNorm2d(512)
+        self.skip4 = nn.Conv2d(256, 512, kernel_size=1, stride=2)
 
         self.pool = nn.AdaptiveAvgPool2d(1)
         self.dropout = nn.Dropout(0.2)
-        self.fc = nn.Linear(256, n_waypoints * 2)
+        self.fc1 = nn.Linear(512, 128)
+        self.fc2 = nn.Linear(128, n_waypoints * 2)
         self.relu = nn.ReLU()
 
     def forward(self, image: torch.Tensor, **kwargs) -> torch.Tensor:
@@ -174,7 +175,8 @@ class CNNPlanner(torch.nn.Module):
 
         x = self.pool(x).squeeze(-1).squeeze(-1)
         x = self.dropout(x)
-        x = self.fc(x)
+        x = self.relu(self.fc1(x))
+        x = self.fc2(x)
         x = x.view(-1, self.n_waypoints, 2)
 
         return x

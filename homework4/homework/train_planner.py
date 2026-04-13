@@ -34,7 +34,7 @@ elif args.model == 'transformer_planner':
     epochs = 50
 elif args.model == 'cnn_planner':
     model = CNNPlanner()
-    lr = 5e-5
+    lr = 1e-3
     epochs = 100
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -43,7 +43,7 @@ model = model.to(device)
 
 os.makedirs(f"homework/{args.model}_checkpoints", exist_ok=True)
 optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.5)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
 best_lat_err = float('inf')
 best_long_err = float('inf')
@@ -61,7 +61,7 @@ for epoch in range(epochs):
             prediction_waypoints = model(batch['track_left'].to(device), batch['track_right'].to(device))
         loss = (prediction_waypoints - waypoints).abs()
         if args.model == 'cnn_planner':
-            loss[:, :, 0] = loss[:, :, 0] * 2.0
+            pass
         else:
             loss[:, :, 1] = loss[:, :, 1] * 2.0
         loss = loss * waypoints_mask[..., None]
